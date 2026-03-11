@@ -1,106 +1,80 @@
-from ..imports import datetime,List, Dict
+from ..imports import datetime, List, Dict
 from ..query_utils import *
 from abstract_utilities import SingletonMeta
-class UserIPManager(BaseQueryManager,metaclass=SingletonMeta):
 
-    """Manages CRUD on uploads; all your original methods just wired up dynamically."""
+
+class UserIPManager(BaseQueryManager):
+
+    """Manages CRUD operations for the user_ips table."""
+
     def __init__(self, logs_on: bool = False):
-        if not hasattr(self, 'initialized') or self.logs_on != logs_on:
+        if not hasattr(self, "initialized") or self.logs_on != logs_on:
             self.initialized = True
-            self.filename = 'userIpQueries'
-            self.basename = f'{self.filename}.json'
+            self.filename = "userIpQueries"
+            self.basename = f"{self.filename}.json"
             self.logs_on = logs_on
-            self.ip_history={}
+            self.ip_history: Dict[str, List[Dict]] = {}
             super().__init__(self.filename, logs_on=logs_on)
 
+    # -----------------------------------------------------
+    # internal utilities
+    # -----------------------------------------------------
 
-    def select_user_ip(
-        self,
-        user_id: int,
-        ip: str
-        ):
-        """Check if a user IP record exists in the user_ips table."""
+    def _log(self):
         if self.logs_on:
             initialize_call_log()
-        query = self._query_select_user_ip
-        args = (user_id, ip)
-        return select_rows(query, *args)
 
+    # -----------------------------------------------------
+    # user_ip CRUD
+    # -----------------------------------------------------
 
-    def update_user_ip(
-        self,
-        user_id: int,
-        ip: str
-        ):
-        """Update the last_seen timestamp and increment hit_count for a user IP."""
-        if self.logs_on:
-            initialize_call_log()
-        query = self._query_update_user_ip
-        time_now = datetime.utcnow()
-        args = (time_now, user_id, ip)
-        insert_query(query, *args)
+    def select_user_ip(self, user_id: int, ip: str):
+        """Check if a user IP record exists."""
+        self._log()
+        return select_rows(self._query_select_user_ip, user_id, ip)
 
+    def update_user_ip(self, user_id: int, ip: str):
+        """Update last_seen and increment hit_count."""
+        self._log()
+        insert_query(
+            self._query_update_user_ip,
+            datetime.utcnow(),
+            user_id,
+            ip
+        )
 
-    def insert_user_ip(
-        self,
-        user_id: int,
-        ip: str
-        ):
-        """Insert a new user IP record into the user_ips table."""
-        if self.logs_on:
-            initialize_call_log()
-        query = self._query_insert_user_ip
-        args = (user_id, ip)
-        insert_query(query, *args)
+    def insert_user_ip(self, user_id: int, ip: str):
+        """Insert a new user_ip row."""
+        self._log()
+        insert_query(self._query_insert_user_ip, user_id, ip)
 
+    def log_user_ip(self, user_id: int, ip: str):
+        """Insert or update a user_ip record."""
+        self._log()
 
-    def log_user_ip(
-        self,
-        user_id: int,
-        ip: str
-        ):
-        """
-        Insert or update the user_ips table for the given (user_id, ip) pair.
-        If the record exists, update it; otherwise, insert a new record.
-        """
-        if self.logs_on:
-            initialize_call_log()
-       
-        rows = self.select_user_ip(user_id, ip)
-        if rows:
+        if self.select_user_ip(user_id, ip):
             self.update_user_ip(user_id, ip)
         else:
             self.insert_user_ip(user_id, ip)
 
+    # -----------------------------------------------------
+    # user lookup by IP
+    # -----------------------------------------------------
 
-    def select_user_by_ip(
-        self,
-        ip: str
-        ):
-        """Retrieve user details associated with the given IP address."""
-        if self.logs_on:
-            initialize_call_log()
-        ip_add = str(ip)
-        if ip_add in self.ip_history:
-            return self.ip_history.get(ip_add)
-        self.ip_history[ip_add] = None  
-        query = self._query_select_user_by_ip
-        args = (ip,)
-        selected_user = select_rows(query, *args)
-        self.ip_history[ip_add] = selected_user
-        return selected_user
+    def select_user_by_ip(self, ip: str):
+        """Retrieve users associated with an IP."""
+        self._log()
 
+        ip = str(ip)
 
+        if ip in self.ip_history:
+            return self.ip_history[ip]
 
-    def get_user_by_ip(
-        self,
-        ip: str
-        ):
-        """
-        Return all users who have been seen from the given IP, along with timestamps.
-        Initializes call logging before querying.
-        """
-        if self.logs_on:
-            initialize_call_log()
-      
+        result = select_rows(self._query_select_user_by_ip, ip)
+        self.ip_history[ip] = result
+
+        return result
+
+    def get_user_by_ip(self, ip: str):
+        """Public interface."""
         return self.select_user_by_ip(ip)
